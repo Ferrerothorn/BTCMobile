@@ -2,19 +2,17 @@ package swissTournamentRunner;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.ParsePosition;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.*;
 import java.io.BufferedReader;
-import java.io.File;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
-import java.util.ArrayList;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 
@@ -22,7 +20,7 @@ public class Main {
 
 	static Tournament tourney = new Tournament();
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws IOException {
 		showCredits();
 		tourney.signUpPlayers();
 		tourney.allParticipantsIn = true;
@@ -374,7 +372,7 @@ class Tournament {
 		battles.clear();
 	}
 
-	public void pollForResults() {
+	public void pollForResults() throws IOException {
 		while (currentBattles.size() > 0 && allParticipantsIn) {
 			updateRoundString();
 			Utils.wipePane();
@@ -534,6 +532,26 @@ class Tournament {
 
 	public void adminTools(String string) {
 		switch (string.toLowerCase()) {
+			case "drop":
+				System.out.println("Enter the name of the player dropping.");
+				String dropping = readInput();
+				dropPlayer(dropping);
+				break;
+			case "add":
+				System.out.print("Enter the name of the player to add.");
+				String newUser = readInput();
+				if(doesPlayerExist("BYE")){
+					addPlayer(newUser);
+					findPlayerByName("BYE").tied(findPlayerByName(newUser));
+			}
+				else {
+					addPlayer(newUser);
+					addPlayer("BYE");
+					findPlayerByName("BYE").tied(findPlayerByName(newUser));
+			}
+				break;
+			case "reopen":
+				break;
 		case "acr":
 			while (currentBattles.size() > 0) {
 				Battle b = currentBattles.remove(0);
@@ -562,13 +580,6 @@ class Tournament {
 		default:
 			Utils.print("Invalid admin command. Returning to tournament...\n");
 		}
-	}
-
-	public String toggle(String onOrOff) {
-		if (onOrOff.equals("on")) {
-			return "off";
-		}
-		return "on";
 	}
 
 	private void generateRoundRobinPairings() {
@@ -730,18 +741,6 @@ class Tournament {
 		return results.toString();
 	}
 
-	public String getResultsOfAllMatchesByPlayerSoFar(Player p) {
-		StringBuilder results = new StringBuilder();
-		for (Battle b : completedBattles) {
-			if (b.contains(p)) {
-				results.append(b.getP1().getName()).append(" ").append(b.getP1().hasBeaten(b.getP2())).append(" [")
-						.append(b.getP1DamageDealt()).append(" - ").append(b.getP2DamageDealt()).append("] ")
-						.append(b.getP2().hasBeaten(b.getP1())).append(" ").append(b.getP2().getName()).append("\n");
-			}
-		}
-		return results.toString();
-	}
-
 	public String postTournamentAwards() throws IndexOutOfBoundsException {
 		String output = "";
 		try {
@@ -775,7 +774,7 @@ class Tournament {
 		Collections.sort(players);
 		Collections.reverse(players);
 		for (Player p : players) {
-			if (p.getOppWr() > 50 && !dropped.contains(p) && !p.isDropped()) {
+			if (p.getOppWr() > 50 && !dropped.contains(p) && !p.isDropped() && !(p.getName().equals("BYE"))) {
 				return p;
 			}
 		}
@@ -808,7 +807,7 @@ class Tournament {
 		return sc.nextLine();
 	}
 
-	public void postTourneyProcessing() {
+	public void postTourneyProcessing() throws IOException {
 		postString("FINAL STANDINGS");
 		updateParticipantStats();
 		postString(generateInDepthRankings(players));
@@ -843,7 +842,7 @@ class Tournament {
 		}
 	}
 
-	public void run() {
+	public void run() throws IOException {
 		while (roundNumber <= getNumberOfRounds() && players.size() > 1) {
 			Collections.shuffle(players);
 			Utils.wipePane();
@@ -865,7 +864,7 @@ class Tournament {
 		postTourneyProcessing();
 	}
 
-	void save() {
+	void save() throws IOException {
 		tntFileManager.saveTournament();
 	}
 
@@ -952,7 +951,7 @@ class TntFileManager {
 		t = tournament;
 	}
 
-	public void saveTournament() {
+	public void saveTournament() throws IOException {
 
 		if (!t.activeMetadataFile.equals("TournamentInProgress.tnt")) {
 			String output = "";
@@ -991,7 +990,7 @@ class TntFileManager {
 			}
 			output += "Dropped:" + s + "\n";
 			try {
-				PrintWriter writer = new PrintWriter(file, "UTF-8");
+				PrintWriter writer = new PrintWriter(file, StandardCharsets.UTF_8);
 				writer.print(output);
 				writer.close();
 			} catch (FileNotFoundException e) {
@@ -1136,7 +1135,6 @@ class TntFileManager {
 			Utils.print("Error reading supplied file, starting at line: \"" + line + "\".");
 		}
 	}
-
 }
 
 class Battle implements Comparable<Battle> {
@@ -1383,16 +1381,14 @@ class Player implements Comparable<Player> {
 		} else {
 			oppWr = 0;
 		}
+//		if(this.getName().equals("BYE")){
+//			oppWr = 0;
+//		}
 	}
 
 	@Override
 	public int compareTo(Player p) {
-		if (this.lastDocumentedPosition == 0 && p.lastDocumentedPosition == 0) {
-			if (this.name.compareTo(p.name) < 0) {
-				return -1;
-			}
-			return 1;
-		} else if (this.name.equals("BYE")) {
+		if (this.name.equals("BYE")) {
 			return 1;
 		} else if (p.getName().equals("BYE")) {
 			return -1;
@@ -1482,8 +1478,7 @@ class Player implements Comparable<Player> {
 	}
 
 	public void setName(String newName) {
-		String sanitisedName = newName.replace("/", "-");
-		this.name = sanitisedName;
+		this.name = newName.replace("/", "-");
 	}
 
 	public void recalculateScore() {
@@ -1633,62 +1628,62 @@ class Utils {
 
 	public static String sanitise(String sanitiseThis) {
 		String processedName = sanitiseThis;
-		processedName = processedName.replaceAll("À", "A");
-		processedName = processedName.replaceAll("à", "a");
-		processedName = processedName.replaceAll("Á", "A");
-		processedName = processedName.replaceAll("á", "a");
-		processedName = processedName.replaceAll("Â", "A");
-		processedName = processedName.replaceAll("â", "a");
-		processedName = processedName.replaceAll("Ã", "A");
-		processedName = processedName.replaceAll("ã", "a");
-		processedName = processedName.replaceAll("Ä", "A");
-		processedName = processedName.replaceAll("ä", "a");
-		processedName = processedName.replaceAll("Ç", "C");
-		processedName = processedName.replaceAll("ç", "c");
-		processedName = processedName.replaceAll("È", "E");
-		processedName = processedName.replaceAll("è", "e");
-		processedName = processedName.replaceAll("É", "E");
-		processedName = processedName.replaceAll("é", "e");
-		processedName = processedName.replaceAll("Ê", "E");
-		processedName = processedName.replaceAll("ê", "e");
-		processedName = processedName.replaceAll("Ë", "E");
-		processedName = processedName.replaceAll("ë", "e");
-		processedName = processedName.replaceAll("Ì", "I");
-		processedName = processedName.replaceAll("ì", "i");
-		processedName = processedName.replaceAll("Í", "I");
-		processedName = processedName.replaceAll("í", "i");
-		processedName = processedName.replaceAll("Î", "I");
-		processedName = processedName.replaceAll("î", "i");
-		processedName = processedName.replaceAll("Ï", "I");
-		processedName = processedName.replaceAll("ï", "i");
-		processedName = processedName.replaceAll("Ñ", "N");
-		processedName = processedName.replaceAll("ñ", "n");
-		processedName = processedName.replaceAll("Ò", "O");
-		processedName = processedName.replaceAll("ò", "o");
-		processedName = processedName.replaceAll("Ó", "O");
-		processedName = processedName.replaceAll("ó", "o");
-		processedName = processedName.replaceAll("Ô", "O");
-		processedName = processedName.replaceAll("ô", "o");
-		processedName = processedName.replaceAll("Õ", "O");
-		processedName = processedName.replaceAll("õ", "o");
-		processedName = processedName.replaceAll("Ö", "O");
-		processedName = processedName.replaceAll("ö", "o");
-		processedName = processedName.replaceAll("Š", "S");
-		processedName = processedName.replaceAll("š", "s");
-		processedName = processedName.replaceAll("Ú", "U");
-		processedName = processedName.replaceAll("ù", "u");
-		processedName = processedName.replaceAll("Û", "U");
-		processedName = processedName.replaceAll("ú", "u");
-		processedName = processedName.replaceAll("Ü", "U");
-		processedName = processedName.replaceAll("û", "u");
-		processedName = processedName.replaceAll("Ù", "U");
-		processedName = processedName.replaceAll("ü", "u");
-		processedName = processedName.replaceAll("Ý", "Y");
-		processedName = processedName.replaceAll("ý", "y");
-		processedName = processedName.replaceAll("Ÿ", "Y");
-		processedName = processedName.replaceAll("ÿ", "y");
-		processedName = processedName.replaceAll("Ž", "Z");
-		processedName = processedName.replaceAll("ž", "z");
+		processedName = processedName.replaceAll("ï¿½", "A");
+		processedName = processedName.replaceAll("ï¿½", "a");
+		processedName = processedName.replaceAll("ï¿½", "A");
+		processedName = processedName.replaceAll("ï¿½", "a");
+		processedName = processedName.replaceAll("ï¿½", "A");
+		processedName = processedName.replaceAll("ï¿½", "a");
+		processedName = processedName.replaceAll("ï¿½", "A");
+		processedName = processedName.replaceAll("ï¿½", "a");
+		processedName = processedName.replaceAll("ï¿½", "A");
+		processedName = processedName.replaceAll("ï¿½", "a");
+		processedName = processedName.replaceAll("ï¿½", "C");
+		processedName = processedName.replaceAll("ï¿½", "c");
+		processedName = processedName.replaceAll("ï¿½", "E");
+		processedName = processedName.replaceAll("ï¿½", "e");
+		processedName = processedName.replaceAll("ï¿½", "E");
+		processedName = processedName.replaceAll("ï¿½", "e");
+		processedName = processedName.replaceAll("ï¿½", "E");
+		processedName = processedName.replaceAll("ï¿½", "e");
+		processedName = processedName.replaceAll("ï¿½", "E");
+		processedName = processedName.replaceAll("ï¿½", "e");
+		processedName = processedName.replaceAll("ï¿½", "I");
+		processedName = processedName.replaceAll("ï¿½", "i");
+		processedName = processedName.replaceAll("ï¿½", "I");
+		processedName = processedName.replaceAll("ï¿½", "i");
+		processedName = processedName.replaceAll("ï¿½", "I");
+		processedName = processedName.replaceAll("ï¿½", "i");
+		processedName = processedName.replaceAll("ï¿½", "I");
+		processedName = processedName.replaceAll("ï¿½", "i");
+		processedName = processedName.replaceAll("ï¿½", "N");
+		processedName = processedName.replaceAll("ï¿½", "n");
+		processedName = processedName.replaceAll("ï¿½", "O");
+		processedName = processedName.replaceAll("ï¿½", "o");
+		processedName = processedName.replaceAll("ï¿½", "O");
+		processedName = processedName.replaceAll("ï¿½", "o");
+		processedName = processedName.replaceAll("ï¿½", "O");
+		processedName = processedName.replaceAll("ï¿½", "o");
+		processedName = processedName.replaceAll("ï¿½", "O");
+		processedName = processedName.replaceAll("ï¿½", "o");
+		processedName = processedName.replaceAll("ï¿½", "O");
+		processedName = processedName.replaceAll("ï¿½", "o");
+		processedName = processedName.replaceAll("ï¿½", "S");
+		processedName = processedName.replaceAll("ï¿½", "s");
+		processedName = processedName.replaceAll("ï¿½", "U");
+		processedName = processedName.replaceAll("ï¿½", "u");
+		processedName = processedName.replaceAll("ï¿½", "U");
+		processedName = processedName.replaceAll("ï¿½", "u");
+		processedName = processedName.replaceAll("ï¿½", "U");
+		processedName = processedName.replaceAll("ï¿½", "u");
+		processedName = processedName.replaceAll("ï¿½", "U");
+		processedName = processedName.replaceAll("ï¿½", "u");
+		processedName = processedName.replaceAll("ï¿½", "Y");
+		processedName = processedName.replaceAll("ï¿½", "y");
+		processedName = processedName.replaceAll("ï¿½", "Y");
+		processedName = processedName.replaceAll("ï¿½", "y");
+		processedName = processedName.replaceAll("ï¿½", "Z");
+		processedName = processedName.replaceAll("ï¿½", "z");
 		return trimWhitespace(processedName);
 	}
 
